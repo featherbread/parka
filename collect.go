@@ -36,7 +36,14 @@ func CollectLimited[K comparable, V any](
 ) ([]V, error) {
 	hctx, cancel := context.WithCancel(ctx)
 	m := NewMap(func(_ *Handle, key K) (V, error) { return handle(hctx, key) })
+
+	// See the "Context" example in the Map docs for an explanation of this pattern.
+	defer func() {
+		m.DequeueAll()
+		cancel()
+		m.Wait()
+	}()
+
 	m.Limit(limit)
-	defer m.Cleanup(cancel)
 	return m.Collect(keys...)
 }

@@ -52,9 +52,17 @@ func ExampleMap_context() {
 		return headResponseCode(ctx, url)
 	})
 
-	// If Collect returns early on error, use Cleanup to dequeue pending work,
-	// cancel the context, and wait for in-flight handlers.
-	defer codes.Cleanup(cancel)
+	// Clean up if Collect returns early on error.
+	defer func() {
+		// It's recommended to dequeue pending work _before_ canceling the context.
+		// With these reversed, the map could waste time on fast-failing handlers
+		// for the queued keys.
+		codes.DequeueAll()
+		cancel()
+		// It's also recommended to wait on canceled handlers to finish, so that
+		// goroutine leaks due to bad cancellation logic are easier to spot.
+		codes.Wait()
+	}()
 
 	codes.Limit(concurrency)
 	codes.Collect(
@@ -942,7 +950,7 @@ func TestMapWaitNonempty(t *testing.T) {
 	})
 }
 
-func TestMapCleanupWait(t *testing.T) {
+func TestMapWait(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		unblock := make(chan struct{})
 		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error {
@@ -953,11 +961,11 @@ func TestMapCleanupWait(t *testing.T) {
 		s.Inform(struct{}{})
 
 		done := make(chan struct{})
-		go func() { s.Cleanup(nil); close(done) }()
+		go func() { s.Wait(); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
-			assert.Fail(t, "Cleanup was not blocked")
+			assert.Fail(t, "Wait was not blocked by a running handler")
 		default:
 		}
 
@@ -990,7 +998,10 @@ func TestMapCleanup(t *testing.T) {
 		go func() { errCh <- s.Collect(keys...) }()
 		synctest.Wait()
 
-		s.Cleanup(cancel)
+		s.DequeueAll()
+		cancel()
+		s.Wait()
+
 		assert.Equal(t, lastToHandle, maxHandled, "Started handlers that should have been dequeued")
 		assert.ErrorIs(t, <-errCh, context.Canceled)
 	})

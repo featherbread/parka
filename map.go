@@ -263,19 +263,6 @@ func (m *Map[K, V]) Limit(limit int) {
 	}
 }
 
-// Cleanup terminates a map's work by dequeueing pending keys, calling an
-// optional cancel function, and waiting for handlers to finish.
-//
-// See the Context example in [Map] for an example of how Cleanup and
-// [context.Context] interact to terminate unnecessary work on early returns.
-func (m *Map[K, V]) Cleanup(cancel func()) {
-	m.DequeueAll()
-	if cancel != nil {
-		cancel()
-	}
-	m.Wait()
-}
-
 // DequeueAll removes and returns any queued keys that haven't been picked up
 // for handling.
 //
