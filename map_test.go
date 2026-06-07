@@ -33,6 +33,10 @@ func ExampleMap() {
 }
 
 func ExampleMap_context() {
+	// Note that [parka.CollectLimited] is a simpler API over _exactly_ this
+	// style of Map usage. The pattern is useful to know if you intend to combine
+	// it with more advanced features like detaching and dynamic limit changes.
+
 	const (
 		concurrency = 3
 		timeout     = 10 * time.Second
