@@ -303,10 +303,11 @@ func (m *Map[K, V]) DequeueAll() []K {
 	return keys
 }
 
-// Wait blocks until the map has no handlers running within its concurrency
-// limit. Handlers that detach from the map and don't reattach before the
-// completion of all attached handlers may still be running after Wait returns.
-func (m *Map[K, V]) Wait() {
+// WaitAttached blocks until the map has no handlers running within its
+// concurrency limit. Handlers that detach from the map and don't reattach
+// before the completion of all attached handlers may still be running after
+// WaitAttached returns.
+func (m *Map[K, V]) WaitAttached() {
 	var done <-chan struct{}
 
 	func() {

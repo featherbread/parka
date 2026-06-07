@@ -41,7 +41,7 @@ func CollectLimited[K comparable, V any](
 	defer func() {
 		m.DequeueAll()
 		cancel()
-		m.Wait()
+		m.WaitAttached()
 	}()
 
 	m.Limit(limit)

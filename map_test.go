@@ -61,7 +61,7 @@ func ExampleMap_context() {
 		cancel()
 		// It's also recommended to wait on canceled handlers to finish, so that
 		// goroutine leaks due to bad cancellation logic are easier to spot.
-		codes.Wait()
+		codes.WaitAttached()
 	}()
 
 	codes.Limit(concurrency)
@@ -908,49 +908,14 @@ func TestMapDequeueAllTorture(t *testing.T) {
 	})
 }
 
-func TestMapWaitEmpty(t *testing.T) {
+func TestMapWaitAttachedEmpty(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := parka.NewSet(func(_ *parka.Handle, _ any) error { return nil })
-		s.Wait()
+		s.WaitAttached()
 	})
 }
 
-func TestMapWaitNonempty(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		unblock := make(chan struct{})
-		s := parka.NewSet(func(_ *parka.Handle, x int) error {
-			<-unblock
-			return nil
-		})
-
-		keys := makeIntKeys(10)
-		s.Inform(keys...)
-		synctest.Wait()
-
-		var dones [2]<-chan struct{}
-		for i := range dones {
-			done := make(chan struct{})
-			dones[i] = done
-			go func() { s.Wait(); close(done) }()
-		}
-		synctest.Wait()
-
-		for i, done := range dones {
-			select {
-			case <-done:
-				assert.Fail(t, "Waiting for map was not blocked (i=%d)", i)
-			default:
-			}
-		}
-
-		close(unblock)
-		for _, done := range dones {
-			<-done
-		}
-	})
-}
-
-func TestMapWait(t *testing.T) {
+func TestMapWaitAttached(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		unblock := make(chan struct{})
 		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error {
@@ -961,11 +926,11 @@ func TestMapWait(t *testing.T) {
 		s.Inform(struct{}{})
 
 		done := make(chan struct{})
-		go func() { s.Wait(); close(done) }()
+		go func() { s.WaitAttached(); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
-			assert.Fail(t, "Wait was not blocked by a running handler")
+			assert.Fail(t, "WaitAttached was not blocked by a running handler")
 		default:
 		}
 
@@ -1000,7 +965,7 @@ func TestMapCleanup(t *testing.T) {
 
 		s.DequeueAll()
 		cancel()
-		s.Wait()
+		s.WaitAttached()
 
 		assert.Equal(t, lastToHandle, maxHandled, "Started handlers that should have been dequeued")
 		assert.ErrorIs(t, <-errCh, context.Canceled)
