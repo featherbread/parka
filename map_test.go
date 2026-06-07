@@ -99,31 +99,6 @@ func ExampleMap_inform() {
 	// Output: 3
 }
 
-func ExampleMap_limited() {
-	var lsbMu parka.KeyMutex[int]
-	m := parka.NewMap(func(ph *parka.Handle, x int) (int, error) {
-		// Ensure one active handler per least-significant bit (LSB).
-		lsb := x % 2
-		lsbMu.LockDetached(ph, lsb)
-		defer lsbMu.Unlock(lsb)
-
-		n := 1
-		for range x {
-			n *= 2
-		}
-		return n, nil
-	})
-
-	// Limit to two active handlers (and any number of detached handlers).
-	// Because of the KeyMutex, the two permitted handlers must be working
-	// on different LSBs despite our queueing order below.
-	m.Limit(2)
-
-	exps, _ := m.Collect(0, 2, 4, 1, 3, 5)
-	fmt.Println(exps)
-	// Output: [1 4 16 2 8 32]
-}
-
 func TestMapBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		m := parka.NewMap(func(_ *parka.Handle, x int) (int, error) {

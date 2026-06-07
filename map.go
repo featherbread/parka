@@ -22,20 +22,50 @@ var ErrHandlerGoexit = errors.New("parka: handler executed runtime.Goexit")
 var ErrTaskEjected = errors.New("task ejected from queue")
 
 // Map runs a handler function once per key in a distinct goroutine and caches
-// the result, while supporting dynamic concurrency limits on handlers.
+// its result.
 //
-// The result from the handler consists of a value and error. Map does not
-// recover panics; they crash the program if not recovered within the handler.
-// If a handler calls [runtime.Goexit], retrieving the key's result panics with
-// [ErrHandlerGoexit].
+// Each result includes a value and error. Errors receive no special treatment;
+// they're cached as part of the key's result, and the corresponding handler is
+// never retried.
+//
+// Map doesn't recover panics; they crash the program if not recovered within
+// the handler. If the handler calls [runtime.Goexit], retrieving the key's
+// result panics with [ErrHandlerGoexit].
+//
+// # Concurrency
 //
 // New maps permit an effectively unlimited number of goroutines ([math.MaxInt])
-// to concurrently handle new keys. [Map.Limit] can change this limit at any
-// time. [Handle.Detach] permits an individual handler to exclude itself from
-// the concurrency limit for the remainder of its own lifetime, or until it
-// calls [Handle.Reattach]. In particular, [KeyMutex] helps handlers detach from
-// the limit while awaiting exclusive use of a shared resource, typically one
-// identified by a subset of the handler's current key.
+// to concurrently handle new keys. [Map.Limit] can change this at any time.
+// Note that maps do not spawn more goroutines than are required to handle
+// known keys, regardless of the concurrency limit.
+//
+// # Queueing
+//
+// When concurrency is limited, the map queues new keys for later handling in
+// the background. Keys are handled in FIFO order unless they're first
+// introduced by [Map.InformFront] rather than an explicit or implicit
+// [Map.Inform], providing minimal prioritization support for urgent tasks.
+//
+// Inform and InformFront enqueue any new keys introduced within a single call
+// as a single batch. When the new keys are logically associated with a single
+// larger operation, this batching is intended to increase the number of larger
+// operations that can finish completely before an unexpected termination. When
+// retrieving results with repeated [Map.Get] calls rather than [Map.Collect],
+// it's recommended to pre-queue the keys as shown in the Inform example.
+//
+// # Detaching
+//
+// Any handler may call [Handle.Detach] to exclude itself from the map's
+// concurrency limit for the remainder of its lifetime, or until it calls
+// [Handle.Reattach].
+//
+// Detaching is intended for use by handlers that share concurrency-limited
+// resources with some (but not all) of their sibling handlers. If a handler
+// finds that a resource is in use, detaching can allow the map's limited
+// concurrency to be used for an unrelated handler rather than spent waiting.
+// [KeyMutex] facilitates this pattern for resources that can be identified by
+// a key; its example shows a KeyMutex over hostnames limiting concurrent
+// fetches of arbitrary URLs from any one host.
 type Map[K comparable, V any] struct {
 	handle func(*Handle, K) (V, error)
 
@@ -156,7 +186,7 @@ func (m *Map[K, V]) Inform(keys ...K) {
 }
 
 // InformFront behaves like [Map.Inform], but enqueues new keys at the front of
-// the map's work queue rather than the back. Like Inform, it does not affect
+// the map's work queue rather than the back. Like Inform, it doesn't affect
 // the order of keys already pending.
 func (m *Map[K, V]) InformFront(keys ...K) {
 	m.getTasks(pushAllFront, keys...)
@@ -164,17 +194,14 @@ func (m *Map[K, V]) InformFront(keys ...K) {
 
 // Get informs the map of the key as if by [Map.Inform], blocks until it has
 // handled the key, then returns the key's result.
-//
-// If the key's handler called [runtime.Goexit], Get panics with [ErrHandlerGoexit].
 func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
 // Collect informs the map of the keys as if by [Map.Inform], then coalesces
-// their results. If any key's handler returns an error or calls [runtime.Goexit],
-// Collect returns that error or panics with [ErrHandlerGoexit] without waiting
-// for the map to handle subsequent keys. Otherwise, Collect returns a slice of
-// values corresponding to the keys.
+// their results. If any key's handler returns an error, Collect returns that
+// error without waiting for the map to handle subsequent keys. Otherwise,
+// Collect returns a slice of values corresponding to the keys.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
@@ -239,9 +266,8 @@ func (m *Map[K, V]) Limit(limit int) {
 // Cleanup terminates a map's work by dequeueing pending keys, calling an
 // optional cancel function, and waiting for handlers to finish.
 //
-// To terminate a map's work when returning early, it is recommended to defer
-// a Cleanup call with the cancel function for a [context.Context] in the
-// handler's scope. See the Context example in [Map] for details.
+// See the Context example in [Map] for an example of how Cleanup and
+// [context.Context] interact to terminate unnecessary work on early returns.
 func (m *Map[K, V]) Cleanup(cancel func()) {
 	m.DequeueAll()
 	if cancel != nil {
@@ -250,11 +276,13 @@ func (m *Map[K, V]) Cleanup(cancel func()) {
 	m.Wait()
 }
 
-// DequeueAll removes and returns any queued keys that have not been picked up
-// for handling. Any retrieval of the keys' corresponding results started before
-// DequeueAll returns the zero value of V and [ErrTaskEjected]. Any retrieval
-// started after DequeueAll re-informs the map of the key. DequeueAll has no
-// effect on cached results or handlers in flight.
+// DequeueAll removes and returns any queued keys that haven't been picked up
+// for handling.
+//
+// DequeueAll unblocks goroutines awaiting the results of the dequeued keys
+// by yielding the zero value of V and [ErrTaskEjected]. Any retrieval of a
+// dequeued key started after DequeueAll returns will re-inform the map of the
+// key. DequeueAll has no effect on cached results or handlers in flight.
 func (m *Map[K, V]) DequeueAll() []K {
 	var (
 		keys  []K
@@ -289,7 +317,7 @@ func (m *Map[K, V]) DequeueAll() []K {
 }
 
 // Wait blocks until the map has no handlers running within its concurrency
-// limit. Handlers that detach from the map and do not reattach before the
+// limit. Handlers that detach from the map and don't reattach before the
 // completion of all attached handlers may still be running after Wait returns.
 func (m *Map[K, V]) Wait() {
 	var done <-chan struct{}
@@ -531,9 +559,9 @@ func (m *Map[K, V]) handleReattach() {
 
 // Handle allows a handler to interact with its parent [Map].
 //
-// It is permitted to call Handle methods in goroutines separate from the
-// handler's own. In the terminology of the Go memory model, the return of every
-// Handle call must be synchronized before the handler's termination.
+// Handle methods may be called in goroutines separate from the handler's own.
+// In the terminology of the Go memory model, the return of every Handle call
+// must be synchronized before the handler's termination.
 type Handle struct {
 	detach   func()
 	reattach func()
@@ -552,8 +580,8 @@ type Handle struct {
 
 // Detach unbounds the calling handler from the concurrency limit of the [Map]
 // that invoked it, allowing the map to immediately handle other keys.
-// It returns true if this call detached the handler, or false if the handler
-// already detached.
+// It returns true if this call detached the handler, or false if this handler
+// had already detached.
 func (h *Handle) Detach() bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()

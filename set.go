@@ -2,6 +2,11 @@ package parka
 
 // Set wraps a [Map] whose handlers return no meaningful value with simplified
 // error-only result APIs.
+//
+// The use of the term "set" could be considered objectionable when each key
+// still maps to a meaningful error value. It may help to think of the handler
+// as determining whether each key belongs to the set, and returning a non-nil
+// error to explain why a given key isn't a member of the set.
 type Set[K comparable] struct {
 	*Map[K, struct{}]
 }

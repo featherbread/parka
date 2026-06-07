@@ -2,8 +2,8 @@ package parka
 
 import "sync"
 
-// KeyMutex provides mutual exclusion among operations targeting a given
-// comparable key. The zero value is a valid KeyMutex with no locked keys.
+// KeyMutex provides mutual exclusion among operations targeting specific
+// comparable keys. The zero value is a valid KeyMutex with no locked keys.
 //
 // A KeyMutex must not be copied after first use.
 type KeyMutex[K comparable] struct {
@@ -22,7 +22,7 @@ func noopDetach() bool { return false }
 func noopReattach() {}
 
 // LockDetached blocks the calling [Map] handler until any other lock on the
-// provided key is released. If the lock is not immediately available,
+// provided key is released. If the lock isn't immediately available,
 // it detaches the handler from the map's concurrency limit while it waits
 // for the lock, and reattaches before returning.
 func (km *KeyMutex[K]) LockDetached(ph *Handle, key K) {
@@ -70,7 +70,7 @@ func (km *KeyMutex[K]) lock(key K, detach func() bool, reattach func()) {
 	}
 }
 
-// Unlock releases the lock on the provided key. It panics if the key is not
+// Unlock releases the lock on the provided key. It panics if the key isn't
 // currently locked.
 func (km *KeyMutex[K]) Unlock(key K) {
 	km.chansMu.Lock()

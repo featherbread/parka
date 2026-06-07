@@ -1,6 +1,10 @@
 package parka_test
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -10,6 +14,45 @@ import (
 	"github.com/featherbread/parka"
 	"github.com/featherbread/parka/catch"
 )
+
+func ExampleKeyMutex() {
+	var hostsMu parka.KeyMutex[string]
+
+	pages := parka.NewMap(func(ph *parka.Handle, pageURL string) ([]byte, error) {
+		parsedURL, err := url.Parse(pageURL)
+		if err != nil {
+			return nil, err
+		}
+
+		// Limit concurrent requests to any single host while allowing concurrency
+		// across distinct hosts.
+		hostsMu.LockDetached(ph, parsedURL.Hostname())
+		defer hostsMu.Unlock(parsedURL.Hostname())
+
+		var body bytes.Buffer
+		resp, err := http.Get(pageURL)
+		if err == nil {
+			_, err = io.Copy(&body, resp.Body)
+			resp.Body.Close()
+		}
+		return body.Bytes(), err
+	})
+
+	// Even though we queue requests for the same hostname together, the KeyMutex
+	// ensures our two concurrent requests always hit different hosts.
+	pages.Limit(2)
+	pages.Collect(
+		// example.com
+		"https://www.example.com/index.html",
+		"https://www.example.com/faq.html",
+		"https://www.example.com/contact.html",
+		// example.net
+		"https://www.example.net/index.html",
+		"https://www.example.net/faq.html",
+		"https://www.example.net/contact.html",
+		// ...
+	)
+}
 
 func TestKeyMutexZeroUnlock(t *testing.T) {
 	var km parka.KeyMutex[int]
