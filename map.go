@@ -215,14 +215,18 @@ func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	return values, nil
 }
 
-// Limit updates the map's concurrency limit for handling pending keys,
-// guaranteeing a limit of at least 1 regardless of the limit provided.
+// Limit updates the map's concurrency limit for handling pending keys.
+// It panics if the provided limit is less than 1.
 //
 // Limit may be called at any time, even while handlers are running.
 // The map immediately spawns handlers for as many pending keys as an
 // increased limit allows, or permits in-flight handlers in violation
 // of a decreased limit to finish in the background.
 func (m *Map[K, V]) Limit(limit int) {
+	if limit < 1 {
+		panic("parka: must allow at least 1 concurrent Map handler")
+	}
+
 	var (
 		keys      []K
 		transfers int
@@ -232,7 +236,7 @@ func (m *Map[K, V]) Limit(limit int) {
 		defer m.stateMu.Unlock()
 
 		// Update the limit, and determine how many new work grants we can issue.
-		m.state.grantLimit = max(1, limit)
+		m.state.grantLimit = limit
 		issuable := max(0, m.state.grantLimit-m.state.grants)
 
 		// Issue as many work grants as possible to reattachers.

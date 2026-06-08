@@ -573,6 +573,17 @@ func TestMapHandlerEscape(t *testing.T) {
 	}
 }
 
+func TestMapLimitZero(t *testing.T) {
+	result := catch.Do(func() (any, error) {
+		parka.
+			NewSet(func(_ *parka.Handle, _ struct{}) error { return nil }).
+			Limit(0)
+		return nil, nil
+	})
+	assert.True(t, result.Panicked(), "Limit(0) should have panicked")
+	assert.Contains(t, result.Recovered(), "must allow at least 1 concurrent Map handler")
+}
+
 func TestMapLimitBasic(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (

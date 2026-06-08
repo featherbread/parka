@@ -24,7 +24,8 @@ func Collect[K comparable, V any](
 }
 
 // CollectLimited behaves like [Collect], but limits the number of goroutines
-// that may concurrently handle keys.
+// that may concurrently handle keys. It panics if the provided limit is less
+// than 1.
 //
 // If any handler returns an error or Goexits, CollectLimited cancels in-flight
 // handlers as described in [Collect], and leaves queued keys unhandled.
