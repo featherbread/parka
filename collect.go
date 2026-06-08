@@ -3,6 +3,7 @@ package parka
 import (
 	"context"
 	"math"
+	"sync/atomic"
 )
 
 // Collect runs a handler function once per unique key in a distinct goroutine,
@@ -34,12 +35,24 @@ func CollectLimited[K comparable, V any](
 	limit int,
 	keys []K,
 	handle func(context.Context, K) (V, error),
-) ([]V, error) {
+) (values []V, err error) {
 	var (
 		hctx, cancel = context.WithCancel(ctx)
 		mapper       *Map[K, V]
 		cleaner      Set[struct{}]
+		firstErr     atomic.Pointer[error]
 	)
+
+	// [Map.Collect] returns the first error with respect to the key order, which
+	// may be a useless [context.Canceled] if a subsequent handler canceled first.
+	// Returning the error that actually triggered cancellation requires extra
+	// work on the handler's part, but is a better match for the venerable
+	// golang.org/x/sync/errgroup.
+	defer func() {
+		if errp := firstErr.Load(); errp != nil {
+			err = *errp
+		}
+	}()
 
 	// The mapper does the actual work. As the [Map.Collect] docs note, it's
 	// crucial that we trigger early cancellation before the handler returns,
@@ -47,6 +60,9 @@ func CollectLimited[K comparable, V any](
 	mapper = NewMap(func(_ *Handle, key K) (v V, err error) {
 		var returned bool
 		defer func() {
+			if err != nil {
+				firstErr.CompareAndSwap(nil, &err)
+			}
 			if err != nil || !returned {
 				cleaner.Inform(struct{}{})
 			}
@@ -71,5 +87,5 @@ func CollectLimited[K comparable, V any](
 	defer cleaner.Get(struct{}{})
 
 	mapper.Limit(limit)
-	return mapper.Collect(keys...) // TODO: May return the wrong error.
+	return mapper.Collect(keys...)
 }

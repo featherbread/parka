@@ -165,3 +165,22 @@ func TestCollectGoexit(t *testing.T) {
 		assert.ErrorIs(t, result.Recovered().(error), parka.ErrHandlerGoexit)
 	})
 }
+
+func TestCollectErrorOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		_, err := parka.Collect(context.Background(), makeIntKeys(2),
+			func(ctx context.Context, x int) (any, error) {
+				switch x {
+				case 0:
+					<-ctx.Done()
+					return nil, ctx.Err()
+				case 1:
+					return nil, errors.New("the real first error")
+				default:
+					panic("unhandled key")
+				}
+			})
+
+		assert.ErrorContains(t, err, "the real first error")
+	})
+}
