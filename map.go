@@ -198,10 +198,16 @@ func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
-// Collect informs the map of the keys as if by [Map.Inform], then coalesces
-// their results. If any key's handler returns an error, Collect returns that
-// error without waiting for the map to handle subsequent keys. Otherwise,
-// Collect returns a slice of values corresponding to the keys.
+// Collect informs the map of the keys as if by [Map.Inform], then returns a
+// slice of values corresponding to the keys, or returns the first error with
+// respect to the order of the keys without waiting for the map to handle any
+// subsequent keys.
+//
+// A consequence of this definition is that Collect can't return any key's
+// error until all of its preceding keys have been handled, which creates
+// subtle pitfalls around behaviors like task cancellation. The family of
+// top-level [Collect] functions demonstrates a robust strategy for
+// [context.Context] handling with a single-use Map.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
