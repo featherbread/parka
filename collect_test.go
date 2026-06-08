@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/featherbread/parka"
+	"github.com/featherbread/parka/catch"
 )
 
 func ExampleCollect() {
@@ -133,5 +135,30 @@ func TestCollectLimited(t *testing.T) {
 		assert.ErrorContains(t, err, "failing call")
 		assert.True(t, called[successfulCall], "successfulCall should have been called")
 		assert.False(t, called[dequeuedCall], "dequeuedCall should not have been called")
+	})
+}
+
+func TestCollectGoexit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		handler := func(ctx context.Context, x int) (any, error) {
+			if x == 1 {
+				time.Sleep(1 * time.Second)
+				runtime.Goexit()
+				return nil, errors.New("goexit")
+			}
+			time.Sleep(2 * time.Second)
+			return nil, nil
+		}
+
+		start := time.Now()
+		result := catch.Do(func() (any, error) {
+			return parka.Collect(context.Background(), makeIntKeys(3), handler)
+		})
+
+		assert.GreaterOrEqual(t, time.Since(start), 2*time.Second,
+			"Collect should have waited for non-Goexit handlers to finish")
+
+		assert.True(t, result.Panicked(), "Collect should have panicked")
+		assert.ErrorIs(t, result.Recovered().(error), parka.ErrHandlerGoexit)
 	})
 }

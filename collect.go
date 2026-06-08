@@ -39,6 +39,11 @@ func CollectLimited[K comparable, V any](
 	m := NewMap(func(_ *Handle, key K) (V, error) { return handle(hctx, key) })
 
 	// See the "Context" example in the Map docs for an explanation of this pattern.
+	//
+	// TODO: This pattern is currently problematic due to how Collect works.
+	// It iterates sequentially to retrieve the results for keys, so a blocked
+	// handler for the first key prevents subsequent handlers from triggering
+	// cancellation. A big regression over errgroup.
 	defer func() {
 		m.DequeueAll()
 		cancel()
