@@ -949,6 +949,30 @@ func TestMapWaitAttached(t *testing.T) {
 	})
 }
 
+func TestMapWaitAttachedMultiple(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		start := time.Now()
+		activated := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, d time.Duration) error {
+			activated <- struct{}{}
+			time.Sleep(d)
+			return nil
+		})
+
+		s.Inform(1 * time.Second)
+		<-activated
+		s.WaitAttached()
+		assert.GreaterOrEqual(t, time.Since(start), 1*time.Second,
+			"WaitAttached should have blocked for at least 1 second")
+
+		s.Inform(2 * time.Second)
+		<-activated
+		s.WaitAttached()
+		assert.GreaterOrEqual(t, time.Since(start), 3*time.Second,
+			"WaitAttached should have blocked a second time on the same map")
+	})
+}
+
 func TestMapCleanup(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const (
