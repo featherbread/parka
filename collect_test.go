@@ -146,6 +146,9 @@ func TestCollectGoexit(t *testing.T) {
 				runtime.Goexit()
 				return nil, errors.New("goexit")
 			}
+			// Blocking on ctx implicitly tests that _any_ failing handler causes
+			// other outstanding handlers to be canceled regardless of queue order.
+			<-ctx.Done()
 			time.Sleep(2 * time.Second)
 			return nil, nil
 		}
@@ -155,7 +158,7 @@ func TestCollectGoexit(t *testing.T) {
 			return parka.Collect(context.Background(), makeIntKeys(3), handler)
 		})
 
-		assert.GreaterOrEqual(t, time.Since(start), 2*time.Second,
+		assert.GreaterOrEqual(t, time.Since(start), 3*time.Second,
 			"Collect should have waited for non-Goexit handlers to finish")
 
 		assert.True(t, result.Panicked(), "Collect should have panicked")

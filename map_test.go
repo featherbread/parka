@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"net/http"
 	"reflect"
 	"runtime"
 	"strings"
@@ -30,61 +29,6 @@ func ExampleMap() {
 	mods, _ := m.Collect(0, 1, 2, 3, 4, 5)
 	fmt.Println(mods)
 	// Output: [0 1 2 0 1 2]
-}
-
-func ExampleMap_context() {
-	// Note that [parka.CollectLimited] is a simpler API over _exactly_ this
-	// style of Map usage. The pattern is useful to know if you intend to combine
-	// it with more advanced features like detaching and dynamic limit changes.
-
-	const (
-		concurrency = 3
-		timeout     = 10 * time.Second
-	)
-
-	// Create a parent context to support canceling in-flight handlers.
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Use that context in a map's handler, making child contexts as needed.
-	codes := parka.NewMap(func(_ *parka.Handle, url string) (int, error) {
-		ctx, cancel := context.WithTimeout(ctx, timeout)
-		defer cancel()
-		return headResponseCode(ctx, url)
-	})
-
-	// Clean up if Collect returns early on error.
-	defer func() {
-		// It's recommended to dequeue pending work _before_ canceling the context.
-		// With these reversed, the map could waste time on fast-failing handlers
-		// for the queued keys.
-		codes.DequeueAll()
-		cancel()
-		// It's also recommended to wait on canceled handlers to finish, so that
-		// goroutine leaks due to bad cancellation logic are easier to spot.
-		codes.WaitAttached()
-	}()
-
-	codes.Limit(concurrency)
-	codes.Collect(
-		"https://www.example.com/",
-		"https://www.example.net/",
-		// ...
-	)
-}
-
-func headResponseCode(ctx context.Context, url string) (code int, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
-	if err != nil {
-		return 0, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, err
-	}
-
-	resp.Body.Close()
-	return resp.StatusCode, nil
 }
 
 func ExampleMap_inform() {

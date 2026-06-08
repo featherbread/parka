@@ -35,21 +35,32 @@ func CollectLimited[K comparable, V any](
 	keys []K,
 	handle func(context.Context, K) (V, error),
 ) ([]V, error) {
-	hctx, cancel := context.WithCancel(ctx)
-	m := NewMap(func(_ *Handle, key K) (V, error) { return handle(hctx, key) })
+	var (
+		hctx, cancel = context.WithCancel(ctx)
+		mapper       *Map[K, V]
+		cleaner      Set[struct{}]
+	)
 
-	// See the "Context" example in the Map docs for an explanation of this pattern.
-	//
-	// TODO: This pattern is currently problematic due to how Collect works.
-	// It iterates sequentially to retrieve the results for keys, so a blocked
-	// handler for the first key prevents subsequent handlers from triggering
-	// cancellation. A big regression over errgroup.
-	defer func() {
-		m.DequeueAll()
+	mapper = NewMap(func(_ *Handle, key K) (v V, err error) {
+		var returned bool
+		defer func() {
+			if err != nil || !returned {
+				cleaner.Inform(struct{}{})
+			}
+		}()
+		v, err = handle(hctx, key)
+		returned = true
+		return
+	})
+
+	cleaner = NewSet(func(_ *Handle, _ struct{}) error {
+		mapper.DequeueAll()
 		cancel()
-		m.WaitAttached()
-	}()
+		mapper.WaitAttached()
+		return nil
+	})
+	defer cleaner.Get(struct{}{})
 
-	m.Limit(limit)
-	return m.Collect(keys...)
+	mapper.Limit(limit)
+	return mapper.Collect(keys...)
 }
