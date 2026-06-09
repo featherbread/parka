@@ -44,6 +44,18 @@ var hashCounts = []int{
 	100_000,
 }
 
+// BenchmarkHashingParkaCollect performs the hashing benchmark by Collecting
+// from a Limited parka.Map. This sets the baseline for how Parka compares to
+// other concurrency approaches.
+//
+// Note that the other benchmarks aren't meant to be completely fair to Parka.
+// While they include a deduplication step and maintain the order of outputs
+// with respect to inputs, they don't support adding arbitrary work at any
+// time, caching outputs, or yielding concurrency slots. The purpose of these
+// benchmarks is to analyze the inherent overhead of Parka for basic collection
+// use cases that _could_ be more efficient with a bespoke implementation.
+// In other words: how worried should you be about reaching for parka.Collect
+// without a second thought?
 func BenchmarkHashingParkaCollect(b *testing.B) {
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
@@ -60,6 +72,14 @@ func BenchmarkHashingParkaCollect(b *testing.B) {
 	}
 }
 
+// BenchmarkHashingWGAtomicIndex shards the hashing benchmark across goroutines
+// by having each goroutine increment an atomic counter and access the input
+// and output slices directly at that index.
+//
+// This was intended as a "naïve" approach that doesn't bother to account for
+// the synchronization overhead of atomics, but it actually performs better
+// than partitioning for low input counts, for reasons I wish I properly
+// understood.
 func BenchmarkHashingWGAtomicIndex(b *testing.B) {
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
@@ -89,6 +109,11 @@ func BenchmarkHashingWGAtomicIndex(b *testing.B) {
 	}
 }
 
+// BenchmarkHashingWGPartition shards the hashing benchmark across goroutines
+// by partitioning the input slice as evenly as possible across them.
+//
+// At high input counts, this can perform substantially better than the atomic
+// approach by limiting the synchronization overheads referenced above.
 func BenchmarkHashingWGPartition(b *testing.B) {
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
