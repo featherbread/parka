@@ -129,12 +129,13 @@ type task[V any] struct {
 }
 
 // gate keeps multiple waiters blocked until a [task] is finished.
-// TODO: Consider sync.WaitGroup if synctest flakiness is fixed?
-type gate chan struct{}
+// It has its own API to permit experimentation with different strategies,
+// like sync.WaitGroup vs. a closed-once chan struct{}.
+type gate struct{ wg sync.WaitGroup }
 
-func (g *gate) Init()   { *g = make(gate) }
-func (g *gate) Wait()   { <-*g }
-func (g *gate) Unlock() { close(*g) }
+func (g *gate) Init()   { g.wg.Add(1) }
+func (g *gate) Wait()   { g.wg.Wait() }
+func (g *gate) Unlock() { g.wg.Done() }
 
 func (t *task[V]) Wait() (V, error) {
 	t.gate.Wait()
