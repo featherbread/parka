@@ -9,8 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/gammazero/deque"
-
-	"github.com/featherbread/parka/catch"
 )
 
 // ErrHandlerGoexit is panicked when retrieving a [Map] result for which the
@@ -124,8 +122,11 @@ func (rq reattachQueue) ReceiveGrant() { rq <- struct{}{} }
 
 // task represents a unit of pending or handled work for a single key.
 type task[V any] struct {
-	gate   gate
-	result catch.Result[V]
+	gate     gate
+	started  bool
+	returned bool
+	value    V
+	err      error
 }
 
 // gate keeps multiple waiters blocked until a [task] is finished.
@@ -139,10 +140,10 @@ func (g *gate) Unlock() { g.wg.Done() }
 
 func (t *task[V]) Wait() (V, error) {
 	t.gate.Wait()
-	if !t.result.Returned() {
+	if t.started && !t.returned {
 		panic(ErrHandlerGoexit) // Must be Goexit, since the gate remains locked on panic.
 	}
-	return t.result.Unwrap()
+	return t.value, t.err
 }
 
 // NewMap creates a [Map] with the provided handler.
@@ -308,7 +309,7 @@ func (m *Map[K, V]) DequeueAll() []K {
 	}()
 
 	for _, task := range tasks {
-		task.result = catch.Return(*new(V), ErrTaskEjected)
+		task.value, task.err = *new(V), ErrTaskEjected
 		task.gate.Unlock()
 	}
 	return keys
@@ -454,7 +455,7 @@ func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
 		}
 		m.tasksHandled.Add(1)
 		task.gate.Unlock()
-		if !detached && !task.result.Returned() {
+		if !detached && !task.returned {
 			// We have a work grant and are (likely) Goexiting, so must transfer it.
 			// This could also be a panic(nil) if GODEBUG=panicnil=1, in which case
 			// we'll turn it into a Goexit to keep our invariants in check.
@@ -463,8 +464,9 @@ func (m *Map[K, V]) completeTask(key K, task *task[V]) (detached bool) {
 		}
 	}()
 
-	task.result = catch.Goexit[V]()
-	task.result = catch.Return(m.handle(h, key)) // May unwind before assignment.
+	task.started = true
+	task.value, task.err = m.handle(h, key) // May unwind before assignment.
+	task.returned = true
 	return
 }
 
