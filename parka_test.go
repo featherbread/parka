@@ -1,6 +1,7 @@
 package parka_test
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -44,7 +45,7 @@ var hashCounts = []int{
 	100_000,
 }
 
-// BenchmarkHashingParkaCollect performs the hashing benchmark by Collecting
+// BenchmarkHashingParkaMapCollect performs the hashing benchmark by Collecting
 // from a Limited parka.Map. This sets the baseline for how Parka compares to
 // other concurrency approaches.
 //
@@ -56,7 +57,7 @@ var hashCounts = []int{
 // use cases that _could_ be more efficient with a bespoke implementation.
 // In other words: how worried should you be about reaching for parka.Collect
 // without a second thought?
-func BenchmarkHashingParkaCollect(b *testing.B) {
+func BenchmarkHashingParkaMapCollect(b *testing.B) {
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
 			cpus := runtime.NumCPU()
@@ -67,6 +68,24 @@ func BenchmarkHashingParkaCollect(b *testing.B) {
 				})
 				m.Limit(cpus)
 				m.Collect(inputs...)
+			}
+		})
+	}
+}
+
+// BenchmarkHashingParkaCollect performs the hashing benchmark using the
+// top-level parka.CollectLimited, which implements (unused, in this case)
+// context cancellation features atop parka.Map that add extra overhead.
+func BenchmarkHashingParkaTopCollect(b *testing.B) {
+	for _, count := range hashCounts {
+		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
+			cpus := runtime.NumCPU()
+			inputs := makeHashInputs(count)
+			for b.Loop() {
+				parka.CollectLimited(context.Background(), cpus, inputs,
+					func(_ context.Context, input [8]byte) (string, error) {
+						return hashOneInput(input), nil
+					})
 			}
 		})
 	}
