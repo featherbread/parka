@@ -12,10 +12,7 @@ import (
 
 // TestWorkPanic asserts that our mockable panic() wrapper really does panic.
 func TestWorkPanic(t *testing.T) {
-	result := catch.Do(func() (any, error) {
-		workPanic("TestWorkPanic")
-		return nil, nil
-	})
+	result := catch.Do(func() { workPanic("TestWorkPanic") })
 	assert.True(t, result.Panicked(), "Result is not Panicked()")
 	assert.Equal(t, result.Recovered(), "TestWorkPanic")
 }

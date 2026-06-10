@@ -154,8 +154,8 @@ func TestCollectGoexit(t *testing.T) {
 		}
 
 		start := time.Now()
-		result := catch.Do(func() (any, error) {
-			return parka.Collect(context.Background(), makeIntKeys(3), handler)
+		result := catch.Do(func() {
+			parka.Collect(context.Background(), makeIntKeys(3), handler)
 		})
 
 		assert.GreaterOrEqual(t, time.Since(start), 3*time.Second,

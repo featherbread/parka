@@ -7,7 +7,7 @@
 //		defer func() {
 //			r := recover()
 //			if rs, ok := r.(string); !ok || rs != "whoops!" {
-//				t.Errorf("unexpected panic value: got=%v, want=%v", r, "whoops!")
+//				t.Errorf("unexpected panic: got=%v, want=%v", r, "whoops!")
 //			}
 //		}()
 //		panic("whoops!")
@@ -17,24 +17,19 @@
 // typical pattern, where the assertions follow the operation itself:
 //
 //	func TestPanicking(t *testing.T) {
-//		result := catch.Do(func() (any, error) {
-//			panic("whoops!")
-//		})
+//		result := catch.Do(func() { panic("whoops!") })
 //		if rs, ok := result.Recovered().(string); !ok || rs != "whoops!" {
-//			t.Errorf("unexpected panic value: got=%v, want=%v", result.Recovered(), "whoops!")
+//			t.Errorf("unexpected panic: got=%v, want=%v", result.Recovered(), "whoops!")
 //		}
 //	}
 package catch
 
-import (
-	"runtime"
-	"sync"
-)
+import "sync"
 
 // Do runs fn in an independent goroutine and captures its exit behavior,
 // isolating the caller from any panic or [runtime.Goexit].
-func Do[T any](fn func() (T, error)) (r Result[T]) {
-	r = Goexit[T]()
+func Do(fn func()) (r Result) {
+	r = Goexit()
 	var wg sync.WaitGroup
 	wg.Go(func() { r = DoOrExit(fn) })
 	wg.Wait()
@@ -43,11 +38,11 @@ func Do[T any](fn func() (T, error)) (r Result[T]) {
 
 // DoOrExit runs fn in the current goroutine and captures a return or panic.
 // Unlike [Do], it propagates [runtime.Goexit] without returning.
-func DoOrExit[T any](fn func() (T, error)) (r Result[T]) {
+func DoOrExit(fn func()) (r Result) {
 	r.started = true
 	func() {
 		defer func() { r.panicval = recover() }()
-		r.value, r.err = fn()
+		fn()
 		r.returned = true
 	}()
 	r.recovered = true
@@ -55,8 +50,8 @@ func DoOrExit[T any](fn func() (T, error)) (r Result[T]) {
 }
 
 // Goexit constructs a synthetic result that captures [runtime.Goexit].
-func Goexit[T any]() Result[T] {
-	return Result[T]{
+func Goexit() Result {
+	return Result{
 		started:   true,
 		returned:  false,
 		recovered: false,
@@ -64,8 +59,8 @@ func Goexit[T any]() Result[T] {
 }
 
 // Panic constructs a synthetic result that captures "panic(panicval)".
-func Panic[T any](panicval any) Result[T] {
-	return Result[T]{
+func Panic(panicval any) Result {
+	return Result{
 		started:   true,
 		returned:  false,
 		recovered: true,
@@ -73,61 +68,36 @@ func Panic[T any](panicval any) Result[T] {
 	}
 }
 
-// Return constructs a synthetic result that captures "return value, err".
-func Return[T any](value T, err error) Result[T] {
-	return Result[T]{
+// Return constructs a synthetic result that captures a normal return.
+func Return() Result {
+	return Result{
 		started:   true,
 		returned:  true,
 		recovered: true,
-		value:     value,
-		err:       err,
 	}
 }
 
 // Result captures the exit behavior of an isolated function. The zero Result
-// behaves as if capturing the return of a zero T and nil error.
-type Result[T any] struct {
+// behaves as if capturing a normal return.
+type Result struct {
 	started   bool
 	returned  bool
 	recovered bool
-	value     T
-	err       error
 	panicval  any
 }
 
-// Unwrap propagates the captured result to the current goroutine:
-// returning its values, panicking, or calling [runtime.Goexit].
-// It is guaranteed to return, rather than panic or Goexit,
-// if and only if [Result.Returned] is true.
-//
-// Unwrap is the only way to obtain the value and error of a captured return;
-// there is no "safe" accessor guaranteed to return in all cases.
-// This intentional design choice discourages the use of results to ignore
-// abnormal exit behaviors rather than inspect and handle them.
-func (r Result[T]) Unwrap() (T, error) {
-	switch {
-	case r.Returned():
-		return r.value, r.err
-	case r.Panicked():
-		panic(r.panicval)
-	default:
-		runtime.Goexit()
-		panic("continued after runtime.Goexit")
-	}
-}
-
 // Goexited is true if this result captures [runtime.Goexit].
-func (r Result[T]) Goexited() bool {
+func (r Result) Goexited() bool {
 	return r.started && !r.recovered
 }
 
 // Panicked is true if this result captures a panic.
-func (r Result[T]) Panicked() bool {
+func (r Result) Panicked() bool {
 	return r.recovered && !r.returned
 }
 
 // Returned is true if this result captures a normal return.
-func (r Result[T]) Returned() bool {
+func (r Result) Returned() bool {
 	return r.returned || !r.started
 }
 
@@ -136,6 +106,6 @@ func (r Result[T]) Returned() bool {
 // If the GODEBUG panicnil=1 setting is enabled, a nil Recovered value may
 // represent a true "panic(nil)". [Result.Panicked] distinguishes nil panics
 // from non-panic results.
-func (r Result[T]) Recovered() any {
+func (r Result) Recovered() any {
 	return r.panicval
 }

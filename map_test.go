@@ -132,11 +132,11 @@ func TestMapGoexit(t *testing.T) {
 		s.Collect(keys...)
 
 		// Ensure we panic when retrieving the Goexited handler's result.
-		getResult := catch.Do(func() (any, error) { return nil, s.Get(0) })
+		getResult := catch.Do(func() { s.Get(0) })
 		assert.True(t, getResult.Panicked(), "Get() did not panic")
 		assert.ErrorIs(t, getResult.Recovered().(error), parka.ErrHandlerGoexit)
 
-		collectResult := catch.Do(func() (any, error) { return nil, s.Collect(1, 0, 2) })
+		collectResult := catch.Do(func() { s.Collect(1, 0, 2) })
 		assert.True(t, collectResult.Panicked(), "Collect() did not panic")
 		assert.ErrorIs(t, collectResult.Recovered().(error), parka.ErrHandlerGoexit)
 	})
@@ -505,10 +505,10 @@ func TestMapHandlerEscape(t *testing.T) {
 				s.Get(struct{}{})
 				require.NotNil(t, handle, "Failed to set handle")
 
-				result := catch.Do(func() ([]reflect.Value, error) {
-					return reflect.ValueOf(handle).
+				result := catch.Do(func() {
+					reflect.ValueOf(handle).
 						MethodByName(strings.TrimPrefix(tc, "Detach+")).
-						Call(nil), nil
+						Call(nil)
 				})
 				assert.True(t, result.Panicked(), "Handle call did not panic")
 				assert.Contains(t, result.Recovered(), "outside handler lifetime")
@@ -518,11 +518,10 @@ func TestMapHandlerEscape(t *testing.T) {
 }
 
 func TestMapLimitZero(t *testing.T) {
-	result := catch.Do(func() (any, error) {
+	result := catch.Do(func() {
 		parka.
 			NewSet(func(_ *parka.Handle, _ struct{}) error { return nil }).
 			Limit(0)
-		return nil, nil
 	})
 	assert.True(t, result.Panicked(), "Limit(0) should have panicked")
 	assert.Contains(t, result.Recovered(), "must allow at least 1 concurrent Map handler")

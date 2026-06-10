@@ -56,7 +56,7 @@ func ExampleKeyMutex() {
 
 func TestKeyMutexZeroUnlock(t *testing.T) {
 	var km parka.KeyMutex[int]
-	result := catch.Do(func() (int, error) { km.Unlock(0); return 0, nil })
+	result := catch.Do(func() { km.Unlock(0) })
 	assert.True(t, result.Panicked())
 	assert.Contains(t, result.Recovered(), "key is already unlocked")
 }
@@ -67,7 +67,7 @@ func TestKeyMutextDoubleUnlock(t *testing.T) {
 		km.Lock(0)
 		km.Lock(1)
 		km.Unlock(1)
-		result := catch.Do(func() (int, error) { km.Unlock(1); return 0, nil })
+		result := catch.Do(func() { km.Unlock(1) })
 		assert.True(t, result.Panicked())
 		assert.Contains(t, result.Recovered(), "key is already unlocked")
 	})
