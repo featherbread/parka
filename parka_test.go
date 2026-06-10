@@ -58,37 +58,29 @@ var hashCounts = []int{
 // In other words: how worried should you be about reaching for parka.Collect
 // without a second thought?
 func BenchmarkHashingParkaMapCollect(b *testing.B) {
-	for _, count := range hashCounts {
-		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			cpus := runtime.NumCPU()
-			inputs := makeHashInputs(count)
-			for b.Loop() {
-				m := parka.NewMap(func(_ *parka.Handle, input [8]byte) (string, error) {
-					return hashOneInput(input), nil
-				})
-				m.Limit(cpus)
-				m.Collect(inputs...)
-			}
-		})
-	}
+	benchmarkAllSubs(b, func(b *testing.B, cpus int, inputs [][8]byte) {
+		for b.Loop() {
+			m := parka.NewMap(func(_ *parka.Handle, input [8]byte) (string, error) {
+				return hashOneInput(input), nil
+			})
+			m.Limit(cpus)
+			m.Collect(inputs...)
+		}
+	})
 }
 
 // BenchmarkHashingParkaCollect performs the hashing benchmark using the
 // top-level parka.CollectLimited, which implements (unused, in this case)
 // context cancellation features atop parka.Map that add extra overhead.
 func BenchmarkHashingParkaTopCollect(b *testing.B) {
-	for _, count := range hashCounts {
-		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			cpus := runtime.NumCPU()
-			inputs := makeHashInputs(count)
-			for b.Loop() {
-				parka.CollectLimited(context.Background(), cpus, inputs,
-					func(_ context.Context, input [8]byte) (string, error) {
-						return hashOneInput(input), nil
-					})
-			}
-		})
-	}
+	benchmarkAllSubs(b, func(b *testing.B, cpus int, inputs [][8]byte) {
+		for b.Loop() {
+			parka.CollectLimited(context.Background(), cpus, inputs,
+				func(_ context.Context, input [8]byte) (string, error) {
+					return hashOneInput(input), nil
+				})
+		}
+	})
 }
 
 // BenchmarkHashingWGAtomicIndex shards the hashing benchmark across goroutines
@@ -100,32 +92,28 @@ func BenchmarkHashingParkaTopCollect(b *testing.B) {
 // than partitioning for low input counts, for reasons I wish I properly
 // understood.
 func BenchmarkHashingWGAtomicIndex(b *testing.B) {
-	for _, count := range hashCounts {
-		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			cpus := runtime.NumCPU()
-			inputs := makeHashInputs(count)
-			for b.Loop() {
-				var (
-					inputs  = trimHashInputs(inputs)
-					outputs = make([]string, len(inputs))
-					index   atomic.Uintptr
-					group   sync.WaitGroup
-				)
-				for range cpus {
-					group.Go(func() {
-						for {
-							i := index.Add(1) - 1
-							if i >= uintptr(len(inputs)) {
-								return
-							}
-							outputs[i] = hashOneInput(inputs[i])
+	benchmarkAllSubs(b, func(b *testing.B, cpus int, inputs [][8]byte) {
+		for b.Loop() {
+			var (
+				inputs  = trimHashInputs(inputs)
+				outputs = make([]string, len(inputs))
+				index   atomic.Uintptr
+				group   sync.WaitGroup
+			)
+			for range cpus {
+				group.Go(func() {
+					for {
+						i := index.Add(1) - 1
+						if i >= uintptr(len(inputs)) {
+							return
 						}
-					})
-				}
-				group.Wait()
+						outputs[i] = hashOneInput(inputs[i])
+					}
+				})
 			}
-		})
-	}
+			group.Wait()
+		}
+	})
 }
 
 // BenchmarkHashingWGPartition shards the hashing benchmark across goroutines
@@ -134,26 +122,32 @@ func BenchmarkHashingWGAtomicIndex(b *testing.B) {
 // At high input counts, this can perform substantially better than the atomic
 // approach by limiting the synchronization overheads referenced above.
 func BenchmarkHashingWGPartition(b *testing.B) {
+	benchmarkAllSubs(b, func(b *testing.B, cpus int, inputs [][8]byte) {
+		for b.Loop() {
+			var (
+				group   sync.WaitGroup
+				inputs  = trimHashInputs(inputs)
+				outputs = make([]string, len(inputs))
+			)
+			for start, end := range partitions(cpus, len(inputs)) {
+				myInputs, myOutputs := inputs[start:end], outputs[start:end]
+				group.Go(func() {
+					for i, input := range myInputs {
+						myOutputs[i] = hashOneInput(input)
+					}
+				})
+			}
+			group.Wait()
+		}
+	})
+}
+
+func benchmarkAllSubs(b *testing.B, run func(b *testing.B, cpus int, inputs [][8]byte)) {
+	cpus := runtime.NumCPU()
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
-			cpus := runtime.NumCPU()
 			inputs := makeHashInputs(count)
-			for b.Loop() {
-				var (
-					group   sync.WaitGroup
-					inputs  = trimHashInputs(inputs)
-					outputs = make([]string, len(inputs))
-				)
-				for start, end := range partitions(cpus, len(inputs)) {
-					myInputs, myOutputs := inputs[start:end], outputs[start:end]
-					group.Go(func() {
-						for i, input := range myInputs {
-							myOutputs[i] = hashOneInput(input)
-						}
-					})
-				}
-				group.Wait()
-			}
+			run(b, cpus, inputs)
 		})
 	}
 }
