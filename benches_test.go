@@ -121,6 +121,11 @@ func BenchmarkHashingWGPartition(b *testing.B) {
 }
 
 func benchmarkAllSubs(b *testing.B, run func(b *testing.B, cpus int, inputs [][8]byte)) {
+	// Note that we always use the number of physical CPUs on the system.
+	// The -test.cpu flag for some reason doesn't apply on the first pass of any
+	// of these benchmarks; they see GOMAXPROCS set to its original value before
+	// the subsequent sub-benchmarks see the correct values from the flag.
+	// If that issue didn't exist, I'd use runtime.GOMAXPROCS(0) instead.
 	cpus := runtime.NumCPU()
 	for _, count := range hashCounts {
 		b.Run(fmt.Sprintf("count=%d", count), func(b *testing.B) {
