@@ -3,7 +3,6 @@ package parka
 import (
 	"context"
 	"math"
-	"sync/atomic"
 )
 
 // Collect runs a handler function once per unique key in a distinct goroutine,
@@ -40,7 +39,7 @@ func CollectLimited[K comparable, V any](
 		hctx, cancel = context.WithCancel(ctx)
 		mapper       *Map[K, V]
 		cleaner      Set[struct{}]
-		firstErr     atomic.Pointer[error]
+		firstErr     = make(chan error, 1)
 	)
 
 	// [Map.Collect] returns the first error with respect to the key order, which
@@ -49,8 +48,10 @@ func CollectLimited[K comparable, V any](
 	// work on the handler's part, but is a better match for the venerable
 	// golang.org/x/sync/errgroup.
 	defer func() {
-		if errp := firstErr.Load(); errp != nil {
-			err = *errp
+		select {
+		case ferr := <-firstErr:
+			err = ferr
+		default:
 		}
 	}()
 
@@ -61,7 +62,10 @@ func CollectLimited[K comparable, V any](
 		var returned bool
 		defer func() {
 			if err != nil {
-				firstErr.CompareAndSwap(nil, &err)
+				select {
+				case firstErr <- err:
+				default:
+				}
 			}
 			if err != nil || !returned {
 				cleaner.Inform(struct{}{})
