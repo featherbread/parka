@@ -1,4 +1,29 @@
 // Package catch confines the effects of panics and [runtime.Goexit] calls.
+//
+// This is especially useful when testing the behavior of functions that
+// intentionally panic or Goexit. Consider the following test:
+//
+//	func TestPanicking(t *testing.T) {
+//		defer func() {
+//			r := recover()
+//			if rs, ok := r.(string); !ok || rs != "whoops!" {
+//				t.Errorf("unexpected panic value: got=%v, want=%v", r, "whoops!")
+//			}
+//		}()
+//		panic("whoops!")
+//	}
+//
+// Then, consider how the analogous test using [catch.Do] follows a more
+// typical pattern, where the assertions follow the operation itself:
+//
+//	func TestPanicking(t *testing.T) {
+//		result := catch.Do(func() (any, error) {
+//			panic("whoops!")
+//		})
+//		if rs, ok := result.Recovered().(string); !ok || rs != "whoops!" {
+//			t.Errorf("unexpected panic value: got=%v, want=%v", result.Recovered(), "whoops!")
+//		}
+//	}
 package catch
 
 import (

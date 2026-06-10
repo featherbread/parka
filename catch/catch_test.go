@@ -3,6 +3,7 @@ package catch_test
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"strconv"
 	"sync"
@@ -12,6 +13,41 @@ import (
 
 	"github.com/featherbread/parka/catch"
 )
+
+func Example_return() {
+	result := catch.Do(func() (string, error) {
+		return "hi there", nil
+	})
+
+	value, err := result.Unwrap()
+	fmt.Printf(
+		"returned=%v, panicked=%v, goexited=%v, value=%q, err=%v",
+		result.Returned(), result.Panicked(), result.Goexited(), value, err)
+	// Output: returned=true, panicked=false, goexited=false, value="hi there", err=<nil>
+}
+
+func Example_panic() {
+	result := catch.Do(func() (any, error) {
+		panic("oh no!")
+	})
+
+	fmt.Printf(
+		"returned=%v, panicked=%v, goexited=%v, recovered=%q",
+		result.Returned(), result.Panicked(), result.Goexited(), result.Recovered())
+	// Output: returned=false, panicked=true, goexited=false, recovered="oh no!"
+}
+
+func Example_goexit() {
+	result := catch.Do(func() (any, error) {
+		runtime.Goexit()
+		return nil, nil
+	})
+
+	fmt.Printf(
+		"returned=%v, panicked=%v, goexited=%v",
+		result.Returned(), result.Panicked(), result.Goexited())
+	// Output: returned=false, panicked=false, goexited=true
+}
 
 var someNilValue any // Never assigned; quiets lints for literal panic(nil).
 
