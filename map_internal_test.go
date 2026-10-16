@@ -49,7 +49,7 @@ func TestHandlerPanic(t *testing.T) {
 		}
 
 		for _, task := range s.tasks {
-			task.gate.Unlock()
+			close(task.done)
 		}
 	})
 }
