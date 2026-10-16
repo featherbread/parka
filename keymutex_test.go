@@ -40,6 +40,9 @@ func ExampleKeyMutex() {
 
 	// Even though we queue requests for the same hostname together, the KeyMutex
 	// ensures our two concurrent requests always hit different hosts.
+	//
+	// Note that this will launch more than two goroutines, some of which will be
+	// idle as they wait their turn.
 	pages.Limit(2)
 	pages.Collect(
 		// example.com

@@ -55,9 +55,9 @@ func CollectLimited[K comparable, V any](
 		}
 	}()
 
-	// The mapper does the actual work. As the [Map.Collect] docs note, it's
-	// crucial that we trigger early cancellation before the handler returns,
-	// to ensure Collect isn't blocked by a stuck preceding handler.
+	// The mapper does the actual work. It's crucial that we trigger early
+	// cancellation before the handler returns, to ensure Collect isn't blocked
+	// by a stuck preceding handler.
 	mapper = NewMap(func(_ *Handle, key K) (v V, err error) {
 		var returned bool
 		defer func() {
@@ -79,9 +79,9 @@ func CollectLimited[K comparable, V any](
 	// The cleaner is a single-shot task that cancels the context and waits for
 	// in-flight handlers to finish. We dequeue pending keys before canceling the
 	// context to limit any flood of fast-failing handlers for those keys.
-	// Notice how this benefits from being defined as a parka.Set: the cleanup
-	// goroutine isn't launched until it's required, and can be triggered with
-	// blocking or non-blocking semantics as necessary.
+	// Since it's defined as a parka.Set, the cleanup goroutine isn't launched
+	// until it's required, and it can be triggered with blocking or non-blocking
+	// semantics as necessary.
 	cleaner = NewSet(func(_ *Handle, _ struct{}) error {
 		mapper.DequeueAll()
 		cancel()

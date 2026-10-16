@@ -1,7 +1,7 @@
 // Package catch confines the effects of panics and [runtime.Goexit] calls.
 //
-// This is especially useful when testing the behavior of functions that
-// intentionally panic or Goexit. Consider the following test:
+// This is useful when testing the behavior of functions that intentionally
+// panic or Goexit. Consider the following test:
 //
 //	func TestPanicking(t *testing.T) {
 //		defer func() {

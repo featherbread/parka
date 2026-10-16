@@ -113,8 +113,8 @@ type workState[K comparable] struct {
 // the unbuffered channel to obtain the grant, while the grantor _receives_ from
 // the channel to unblock them. The thinking is that Go's spec defines channels
 // as FIFO queues, so if we want reattachers to resume in FIFO order we should
-// queue them up on the sending side. Though in practice, for a variety of
-// reasons, the order probably doesn't matter much.
+// queue them up on the sending side. (However, it's possible this makes no
+// difference in Go's runtime implementation.)
 type reattachQueue chan struct{}
 
 func (rq reattachQueue) SendGrant()    { <-rq }
@@ -206,10 +206,10 @@ func (m *Map[K, V]) Get(key K) (V, error) {
 // subsequent keys.
 //
 // A consequence of this definition is that Collect can't return any key's
-// error until all of its preceding keys have been handled, which creates
-// subtle pitfalls around behaviors like task cancellation. The family of
-// top-level [Collect] functions demonstrates a robust strategy for
-// [context.Context] handling with a single-use Map.
+// error until all of its preceding keys have been handled. If your map exists
+// within the lifetime of a single [context.Context], consider the family of
+// top-level [Collect] functions, which immediately cancel work after any
+// handler returns an error.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
@@ -224,7 +224,7 @@ func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
 }
 
 // Limit updates the map's concurrency limit for handling pending keys.
-// It panics if the provided limit is less than 1.
+// The provided limit must be at least 1.
 //
 // Limit may be called at any time, even while handlers are running.
 // The map immediately spawns handlers for as many pending keys as an
@@ -282,6 +282,11 @@ func (m *Map[K, V]) Limit(limit int) {
 // by yielding the zero value of V and [ErrTaskEjected]. Any retrieval of a
 // dequeued key started after DequeueAll returns will re-inform the map of the
 // key. DequeueAll has no effect on cached results or handlers in flight.
+//
+// The intended purpose of DequeueAll is to avoid wasted handler startups when
+// disposing of a single-use map before all keys are handled normally. Before
+// using it, consider the family of top-level [Collect] functions, which
+// automatically dequeue pending keys after any handler returns an error.
 func (m *Map[K, V]) DequeueAll() []K {
 	var (
 		keys  []K
