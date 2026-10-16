@@ -1,6 +1,7 @@
 package parka
 
 import (
+	"context"
 	"errors"
 	"math"
 	"runtime"
@@ -191,6 +192,19 @@ func (m *Map[K, V]) Get(key K) (V, error) {
 	return m.getTasks(pushAllBack, key)[0].Wait()
 }
 
+// GetContext behaves like [Map.Get], but returns early with ctx.Err() if ctx
+// is canceled before the key is handled. The map remains informed of the key
+// and will handle it in the background.
+func (m *Map[K, V]) GetContext(ctx context.Context, key K) (V, error) {
+	task := m.getTasks(pushAllBack, key)[0]
+	select {
+	case <-ctx.Done():
+		return *new(V), ctx.Err()
+	case <-task.done:
+		return task.Wait()
+	}
+}
+
 // Collect informs the map of the keys as if by [Map.Inform], then returns a
 // slice of values corresponding to the keys, or returns the first error with
 // respect to the order of the keys without waiting for the map to handle any
@@ -202,13 +216,30 @@ func (m *Map[K, V]) Get(key K) (V, error) {
 // top-level [Collect] functions, which immediately cancel work after any
 // handler returns an error.
 func (m *Map[K, V]) Collect(keys ...K) ([]V, error) {
+	return m.CollectContext(context.Background(), keys...)
+}
+
+// CollectContext behaves like [Map.Collect], but returns early with ctx.Err()
+// if ctx is canceled before collection terminates. The map remains informed of
+// the keys and will handle them in the background.
+//
+// If your map exists within the lifetime of a single [context.Context],
+// consider the family of top-level [Collect] functions first. CollectContext's
+// lack of handler cancellation is best suited for shared maps that outlive any
+// particular context.
+func (m *Map[K, V]) CollectContext(ctx context.Context, keys ...K) ([]V, error) {
 	var err error
 	tasks := m.getTasks(pushAllBack, keys...)
 	values := make([]V, len(tasks))
 	for i, task := range tasks {
-		values[i], err = task.Wait()
-		if err != nil {
-			return nil, err
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-task.done:
+			values[i], err = task.Wait()
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return values, nil

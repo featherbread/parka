@@ -1,5 +1,7 @@
 package parka
 
+import "context"
+
 // Set wraps a [Map] whose handlers return no meaningful value with simplified
 // error-only result APIs.
 //
@@ -28,8 +30,20 @@ func (s Set[K]) Get(key K) error {
 	return err
 }
 
+// Get is analogous to [Map.GetContext].
+func (s Set[K]) GetContext(ctx context.Context, key K) error {
+	_, err := s.Map.GetContext(ctx, key)
+	return err
+}
+
 // Collect is analogous to [Map.Collect].
 func (s Set[K]) Collect(keys ...K) error {
 	_, err := s.Map.Collect(keys...)
+	return err
+}
+
+// Collect is analogous to [Map.CollectContext].
+func (s Set[K]) CollectContext(ctx context.Context, keys ...K) error {
+	_, err := s.Map.CollectContext(ctx, keys...)
 	return err
 }

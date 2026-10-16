@@ -90,6 +90,87 @@ func TestMapCollectOrder(t *testing.T) {
 	})
 }
 
+func TestMapGetContext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var inflight atomic.Bool
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, _ struct{}) error {
+			inflight.Store(true)
+			defer inflight.Store(false)
+			<-unblock
+			return nil
+		})
+
+		// Start waiting for a result.
+		ctx, cancel := context.WithCancel(t.Context())
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.GetContext(ctx, struct{}{})
+		}()
+
+		// Make sure we're blocked.
+		synctest.Wait()
+		assert.Empty(t, errCh, "GetContext should not have returned yet")
+		assert.True(t, inflight.Load(),
+			"handler should be in flight before ctx is canceled")
+
+		// Cancel the context without unblocking the handler.
+		cancel()
+		synctest.Wait()
+		assert.ErrorIs(t, <-errCh, ctx.Err())
+		assert.True(t, inflight.Load(),
+			"handler should be in flight after ctx is canceled")
+
+		// Unblock the handler, and let synctest confirm no goroutine leaks.
+		close(unblock)
+	})
+}
+
+func TestMapCollectContext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var inflight atomic.Int32
+		unblock := make(chan struct{})
+		s := parka.NewSet(func(_ *parka.Handle, x int) error {
+			inflight.Add(1)
+			defer inflight.Add(-1)
+			if x >= 5 {
+				<-unblock
+			}
+			return nil
+		})
+
+		// Start waiting for a result.
+		ctx, cancel := context.WithCancel(t.Context())
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- s.CollectContext(ctx, makeIntKeys(10)...)
+		}()
+
+		// Make sure we're blocked.
+		synctest.Wait()
+		assert.Empty(t, errCh, "CollectContext should not have returned yet")
+		assert.Greater(t, inflight.Load(), int32(0),
+			"handlers should be in flight before ctx is canceled")
+
+		// Cancel the context without unblocking the handler.
+		cancel()
+		synctest.Wait()
+		assert.ErrorIs(t, <-errCh, ctx.Err())
+		assert.Greater(t, inflight.Load(), int32(0),
+			"handlers should be in flight after ctx is canceled")
+
+		// Unblock all the handlers.
+		close(unblock)
+		synctest.Wait()
+		require.Equal(t, int32(0), inflight.Load(), "handlers should be unblocked")
+
+		// Ensure results were still computed and cached in the background by
+		// re-blocking the handler.
+		unblock = make(chan struct{})
+		assert.NoError(t, s.GetContext(t.Context(), 5))
+	})
+}
+
 func TestSetError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		s := parka.NewSet(func(_ *parka.Handle, x int) error {

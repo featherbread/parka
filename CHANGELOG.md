@@ -1,3 +1,12 @@
+## Unreleased
+
+### Added
+
+* **The `{Map,Set}.{Get,Collect}Context` methods.** Individual callers can use
+  `context.Context` to cancel their own waiting for results while the map
+  continues to handle keys in the background. This simplifies the use of shared
+  maps across independent consumers.
+
 ## v1.0.0 (2026-10-19)
 
 This is the initial stable release of Parka, a managed concurrency library
